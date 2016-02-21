@@ -498,6 +498,14 @@ class Player
         if ( !this.preRace() )
             return false;
 
+	if ( RS_QueryPjState( this.client.playerNum )  )
+	{
+	this.client.addAward( S_COLOR_RED + "Prejumped!" );
+	this.client.respawn( false );
+	RS_ResetPjState( this.client.playerNum );
+	return false;
+    	}
+
         this.currentSector = 0;
         this.inRace = true;
         this.startTime = levelTime;
