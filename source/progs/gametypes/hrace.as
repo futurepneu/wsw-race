@@ -1789,7 +1789,7 @@ void GT_InitGametype()
         G_CmdExecute( "exec configs/server/gametypes/" + gametype.name + ".cfg silent" );
     }
 
-    gametype.spawnableItemsMask = ( IT_AMMO | IT_WEAPON | IT_POWERUP );
+    gametype.spawnableItemsMask = ( IT_WEAPON | IT_AMMO | IT_ARMOR | IT_POWERUP | IT_HEALTH );
     if ( gametype.isInstagib )
         gametype.spawnableItemsMask &= ~uint( G_INSTAGIB_NEGATE_ITEMMASK );
 
