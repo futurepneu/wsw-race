@@ -1601,6 +1601,8 @@ void GT_PlayerRespawn( Entity @ent, int old_team, int new_team )
     else
         ent.client.selectWeapon( -1 ); // auto-select best weapon in the inventory
 
+    G_RemoveProjectiles( ent );
+
     player.loadPosition( false );
 
     if ( player.noclipSpawn )
@@ -1879,4 +1881,4 @@ void GT_InitGametype()
     demoRecording = false;
 
     G_Print( "Gametype '" + gametype.title + "' initialized\n" );
-}
+}GT respawn
