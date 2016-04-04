@@ -1881,4 +1881,4 @@ void GT_InitGametype()
     demoRecording = false;
 
     G_Print( "Gametype '" + gametype.title + "' initialized\n" );
-}GT respawn
+}
