@@ -20,6 +20,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 int numCheckpoints = 0;
 bool demoRecording = false;
 const int MAX_RECORDS = 30;
+const int DISPLAY_RECORDS = 20;
 const int HUD_RECORDS = 3;
 
 uint[] levelRecordSectors;
@@ -117,10 +118,7 @@ class RecordTime
         this.saved = true;
         this.finishTime = player.finishTime;
         this.playerName = client.name;
-        if ( client.getUserInfoKey( "cl_mm_session" ).toInt() > 0 )
-            this.login = client.getUserInfoKey( "cl_mm_login" );
-        else
-            this.login = "";
+        this.login = player.getLogin();
         for ( int i = 0; i < numCheckpoints; i++ )
             this.sectorTimes[i] = player.sectorTimes[i];
     }
@@ -317,6 +315,55 @@ class Player
     }
 
     ~Player() {}
+
+    const String @getLogin()
+    {
+        if ( this.client.getUserInfoKey( "cl_mm_session" ).toInt() > 0 )
+            return this.client.getUserInfoKey( "cl_mm_login" );
+        else
+            return "";
+    }
+
+    void setBestTime( uint time )
+    {
+        this.hasTime = true;
+        this.bestFinishTime = time;
+        this.updateScore();
+    }
+
+    void updateScore()
+    {
+        this.client.stats.setScore( this.bestFinishTime / 10 );
+    }
+
+    String @scoreboardEntry()
+    {
+        Entity @ent = this.client.getEnt();
+        int playerID = ( ent.isGhosting() && ( match.getState() == MATCH_STATE_PLAYTIME ) ) ? -( ent.playerNum + 1 ) : ent.playerNum;
+        String racing;
+
+        if ( this.practicing )
+            racing = S_COLOR_CYAN + "No";
+        else if ( this.inRace )
+            racing = S_COLOR_GREEN + "Yes";
+        else
+            racing = S_COLOR_RED + "No";
+        String diff;
+        if ( this.hasTime && levelRecords[0].saved && this.bestFinishTime >= levelRecords[0].finishTime )
+        {
+            if ( this.bestFinishTime == levelRecords[0].finishTime )
+                diff = S_COLOR_GREEN + "0";
+            else if ( this.bestFinishTime >= levelRecords[0].finishTime + 1000 )
+                diff = S_COLOR_RED + "+";
+            else
+                diff = S_COLOR_YELLOW + ( this.bestFinishTime - levelRecords[0].finishTime );
+        }
+        else
+        {
+            diff = "-";
+        }
+        return "&p " + playerID + " " + ent.client.clanName + " " + this.bestFinishTime + " " + diff + " " + ent.client.ping + " " + racing + " ";
+    }
 
     bool preRace()
     {
@@ -622,8 +669,7 @@ class Player
         {
             this.client.addAward( S_COLOR_YELLOW + "Personal record!" );
             // copy all the sectors into the new personal record backup
-            this.hasTime = true;
-            this.bestFinishTime = this.finishTime;
+            this.setBestTime( this.finishTime );
             for ( int i = 0; i < numCheckpoints; i++ )
                 this.bestSectorTimes[i] = this.sectorTimes[i];
         }
@@ -634,9 +680,7 @@ class Player
             if ( !levelRecords[top].saved || this.finishTime < levelRecords[top].finishTime )
             {
                 String cleanName = this.client.name.removeColorTokens().tolower();
-                String login = "";
-                if ( this.client.getUserInfoKey( "cl_mm_session" ).toInt() > 0 )
-                    login = this.client.getUserInfoKey( "cl_mm_login" );
+                String login = getLogin();
 
                 if ( top == 0 )
                 {
@@ -648,15 +692,19 @@ class Player
                 int remove = MAX_RECORDS - 1;
                 for ( int i = 0; i < MAX_RECORDS; i++ )
                 {
-                    if ( levelRecords[i].login == "" ? levelRecords[i].playerName.removeColorTokens().tolower() == cleanName : levelRecords[i].login == login )
+                    if ( ( login == "" && levelRecords[i].login == "" && levelRecords[i].playerName.removeColorTokens().tolower() == cleanName )
+                            || ( login != "" && levelRecords[i].login == login ) )
                     {
                         if ( i < top )
-                        {
                             remove = -1; // he already has a better time, don't save it
-                            break;
-                        }
-
-                        remove = i;
+                        else
+                            remove = i;
+                        break;
+                    }
+                    if ( login == "" && levelRecords[i].login != "" && levelRecords[i].playerName.removeColorTokens().tolower() == cleanName && i < top )
+                    {
+                        remove = -1; // he already has a better time, don't save it
+                        break;
                     }
                 }
 
@@ -667,6 +715,23 @@ class Player
                         levelRecords[i].Copy( levelRecords[i - 1] );
 
                     levelRecords[top].Store( this.client );
+
+                    if ( login != "" )
+                    {
+                        // there may be authed and unauthed records for a
+                        // player; remove the unauthed if it is worse than the
+                        // authed one
+                        bool found = false;
+                        for ( int i = top + 1; i < MAX_RECORDS; i++ )
+                        {
+                            if ( levelRecords[i].login == "" && levelRecords[i].playerName.removeColorTokens().tolower() == cleanName )
+                                found = true;
+                            if ( found && i < MAX_RECORDS - 1 )
+                                levelRecords[i].Copy( levelRecords[i + 1] );
+                        }
+                        if ( found )
+                            levelRecords[MAX_RECORDS - 1].clear();
+                    }
 
                     RACE_WriteTopScores();
                     RACE_UpdateHUDTopScores();
@@ -1106,7 +1171,7 @@ void RACE_LoadTopScores()
             for ( int j = 0; j < i; j++ )
             {
                 if ( ( loginToken != "" && levelRecords[j].login == loginToken )
-                        || levelRecords[j].playerName.removeColorTokens().tolower() == cleanName )
+                        || ( loginToken == "" && levelRecords[j].playerName.removeColorTokens().tolower() == cleanName ) )
                 {
                     exists = true;
                     break;
@@ -1378,7 +1443,7 @@ bool GT_Command( Client @client, const String &cmdString, const String &argsStri
         else
         {
             Table table( "r r r l l" );
-            for ( int i = MAX_RECORDS - 1; i >= 0; i-- )
+            for ( int i = 0; i < DISPLAY_RECORDS; i++ )
             {
                 RecordTime @record = levelRecords[i];
                 if ( record.saved )
@@ -1420,21 +1485,6 @@ bool GT_UpdateBotStatus( Entity @self )
 Entity @GT_SelectSpawnPoint( Entity @self )
 {
     return GENERIC_SelectBestRandomSpawnPoint( self, "info_player_deathmatch" );
-}
-
-String @ScoreboardEntry( Player @player )
-{
-    Entity @ent = player.client.getEnt();
-    int playerID = ( ent.isGhosting() && ( match.getState() == MATCH_STATE_PLAYTIME ) ) ? -( ent.playerNum + 1 ) : ent.playerNum;
-    String racing;
-
-    if ( player.practicing )
-        racing = S_COLOR_CYAN + "No";
-    else if ( player.inRace )
-        racing = S_COLOR_GREEN + "Yes";
-    else
-        racing = S_COLOR_RED + "No";
-    return "&p " + playerID + " " + ent.client.clanName + " " + player.bestFinishTime + " " + ent.client.ping + " " + racing + " ";
 }
 
 String @GT_ScoreboardMessage( uint maxlen )
@@ -1485,7 +1535,7 @@ String @GT_ScoreboardMessage( uint maxlen )
 
                 if ( player.hasTime && player.bestFinishTime == currentTime )
                 {
-                    entry = ScoreboardEntry( player );
+                    entry = player.scoreboardEntry();
                     if ( scoreboardMessage.length() + entry.length() < maxlen )
                         scoreboardMessage += entry;
                 }
@@ -1503,7 +1553,7 @@ String @GT_ScoreboardMessage( uint maxlen )
 
         if ( !player.hasTime )
         {
-            entry = ScoreboardEntry( player );
+            entry = player.scoreboardEntry();
             if ( scoreboardMessage.length() + entry.length() < maxlen )
                 scoreboardMessage += entry;
         }
@@ -1549,13 +1599,13 @@ void GT_ScoreEvent( Client @client, const String &score_event, const String &arg
     }
     else if ( score_event == "userinfochanged" )
     {
-        if ( @client != null && client.getUserInfoKey( "cl_mm_session" ).toInt() > 0 )
+        if ( @client != null )
         {
-            String login = client.getUserInfoKey( "cl_mm_login" );
+            Player @player = RACE_GetPlayer( client );
+            String login = player.getLogin();
             if ( login != "" )
             {
                 // find out if he holds a record better than his current time
-                Player @player = RACE_GetPlayer( client );
                 for ( int i = 0; i < MAX_RECORDS; i++ )
                 {
                     if ( !levelRecords[i].saved )
@@ -1563,8 +1613,7 @@ void GT_ScoreEvent( Client @client, const String &score_event, const String &arg
                     if ( levelRecords[i].login == login
                             && ( !player.hasTime || levelRecords[i].finishTime < player.bestFinishTime ) )
                     {
-                        player.hasTime = true;
-                        player.bestFinishTime = levelRecords[i].finishTime;
+                        player.setBestTime( levelRecords[i].finishTime );
                         for ( int j = 0; j < numCheckpoints; j++ )
                             player.bestSectorTimes[j] = levelRecords[i].sectorTimes[j];
                         break;
@@ -1583,6 +1632,7 @@ void GT_PlayerRespawn( Entity @ent, int old_team, int new_team )
     player.cancelRace();
 
     player.setQuickMenu();
+    player.updateScore();
 
     if ( ent.isGhosting() )
         return;
@@ -1863,8 +1913,8 @@ void GT_InitGametype()
         gametype.setTeamSpawnsystem( team, SPAWNSYSTEM_INSTANT, 0, 0, false );
 
     // define the scoreboard layout
-    G_ConfigString( CS_SCB_PLAYERTAB_LAYOUT, "%n 112 %s 52 %t 96 %l 48 %s 52" );
-    G_ConfigString( CS_SCB_PLAYERTAB_TITLES, "Name Clan Time Ping Racing" );
+    G_ConfigString( CS_SCB_PLAYERTAB_LAYOUT, "%n 112 %s 52 %t 96 %s 48 %l 48 %s 52" );
+    G_ConfigString( CS_SCB_PLAYERTAB_TITLES, "Name Clan Time Diff Ping Racing" );
 
     // add commands
     G_RegisterCommand( "gametype" );
