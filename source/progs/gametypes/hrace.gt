@@ -14,5 +14,6 @@ hrace/entities/trigger_push_velocity.as;
 hrace/entities/target_delay.as;
 hrace/entities/shooters.as;
 hrace/entities/gates.as;
+hrace/entities/accuracy.as
 
 hrace.as;
