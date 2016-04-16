@@ -1647,6 +1647,7 @@ void GT_PlayerRespawn( Entity @ent, int old_team, int new_team )
         ent.client.selectWeapon( -1 ); // auto-select best weapon in the inventory
 
     G_RemoveProjectiles( ent );
+    scoreCounter[ent.client.playerNum] = 0;
 
     player.loadPosition( false );
 
